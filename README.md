@@ -1,0 +1,2 @@
+# AnotherEquipList
+Another equipment list
