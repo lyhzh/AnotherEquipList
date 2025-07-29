@@ -1,0 +1,6 @@
+## Interface: 11200
+## Title: Another |cffE0B0FFEquipList|r
+## Notes: Displays equipped items next to the character panel. By Kianal.
+## Author: Kianal
+
+AnotherEquipList.lua
