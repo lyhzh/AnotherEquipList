@@ -21964,11 +21964,57 @@ local Item_Level = {
     [93116] = 1,
 }
 
+-- 创建一个简单的管理器来处理物品信息请求
+local ItemInfoManager = {}
+
+-- 用来存储回调函数。键是itemID，值是成功后要执行的函数。
+ItemInfoManager.pendingRequests = {}
+
+-- 创建一个框架来监听事件
+local eventFrame = CreateFrame("Frame")
+eventFrame:RegisterEvent("GET_ITEM_INFO_RECEIVED")
+
+eventFrame:SetScript("OnEvent", function(self, event, itemID, success)
+    -- 事件触发，检查这个itemID是否在我们等待的列表中
+    if event == "GET_ITEM_INFO_RECEIVED" and success and ItemInfoManager.pendingRequests[itemID] then
+        -- 从等待列表中获取回调函数
+        local callback = ItemInfoManager.pendingRequests[itemID]
+        -- 将这个请求从等待列表中移除
+        ItemInfoManager.pendingRequests[itemID] = nil
+        -- 执行回调函数
+        callback(itemID)
+    end
+end)
+
+
+---
+-- 公开的请求函数
+-- @param itemID (number): 你要查询的物品ID
+-- @param callback (function): 获取成功后要执行的函数，它会接收itemID作为参数
+---
+function ItemInfoManager:RequestInfo(itemID, callback)
+    if not itemID or type(itemID) ~= "number" then
+        print("请求错误: 无效的 itemID")
+        return
+    end
+
+    -- 尝试直接获取信息
+    local itemName, _, itemQuality = GetItemInfo(itemID)
+
+    if itemName then
+        -- 如果信息已在缓存中，直接执行回调
+        callback(itemID)
+    else
+        -- 如果信息不在缓存中，将其加入等待列表
+        self.pendingRequests[itemID] = callback
+    end
+end
+
 -- 创建主框架，作为角色界面的子框架
 local EquipmentListFrame = CreateFrame("Frame", "EquipmentListFrame", CharacterFrame)
-EquipmentListFrame:SetWidth(200)
-EquipmentListFrame:SetHeight(500)
-EquipmentListFrame:SetPoint("TopLeft", CharacterFrame, "TopRight", 0, 0)
+EquipmentListFrame:SetWidth(230)
+EquipmentListFrame:SetHeight(400)
+EquipmentListFrame:SetPoint("TopLeft", CharacterFrame, "TopRight", -20, -10)
 
 -- ===== 添加背景 =====
 -- 创建背景纹理
@@ -21984,7 +22030,8 @@ title:SetText("已装备物品")
 
 -- 创建装备列表的容器
 local itemsList = {}
-for i = 1, 19 do -- 1.12版本有19个装备槽位
+
+for i = 1, 19 do
     itemsList[i] = EquipmentListFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     itemsList[i]:SetPoint("TOPLEFT", EquipmentListFrame, "TOPLEFT", 10, -30 - (i - 1) * 15)
     itemsList[i]:SetWidth(300)
@@ -21992,33 +22039,31 @@ for i = 1, 19 do -- 1.12版本有19个装备槽位
     itemsList[i]:Hide()
 end
 
--- 获取物品颜色的函数（1.12中物品质量值：0=普通, 1=优秀, 2=精良, 3=史诗, 4=传说）
+-- 获取物品颜色的函数
 local function GetItemQualityColor(quality)
+    local qualityMap = {
+        [0] = { name = "粗糙", colorCode = "|cff9d9d9d", rgb = { r = 0.62, g = 0.62, b = 0.62 } },
+        [1] = { name = "普通", colorCode = "|cffffffff", rgb = { r = 1, g = 1, b = 1 } },
+        [2] = { name = "精良", colorCode = "|cff1eff00", rgb = { r = 0.12, g = 1, b = 0 } },
+        [3] = { name = "稀有", colorCode = "|cff0070dd", rgb = { r = 0, g = 0.44, b = 0.87 } },
+        [4] = { name = "史诗", colorCode = "|cffa335ee", rgb = { r = 0.64, g = 0.21, b = 0.93 } },
+        [5] = { name = "传说", colorCode = "|cffff8000", rgb = { r = 1, g = 0.5, b = 0 } },
+        [6] = { name = "神器", colorCode = "|cffe6cc80", rgb = { r = 0.9, g = 0.8, b = 0.5 } },
+    }
     quality = quality or 0 -- 如果质量值为nil，默认为普通
 
-    local colors = {
-        [0] = { r = 1.0, g = 1.0, b = 1.0 }, -- 普通（白色）
-        [1] = { r = 0.0, g = 1.0, b = 0.0 }, -- 优秀（绿色）
-        [2] = { r = 0.0, g = 0.5, b = 1.0 }, -- 精良（蓝色）
-        [3] = { r = 0.7, g = 0.0, b = 1.0 }, -- 史诗（紫色）
-        [4] = { r = 1.0, g = 0.5, b = 0.0 }, -- 传说（橙色）
-    }
-
-    return colors[quality] or colors[0]
+    return qualityMap[quality].rgb
 end
 
 ---
 -- 获取指定装备栏位的物品ID
--- @param slotId (number): 装备栏位的数字ID (1-19)
+-- @param itemLink (string): 由 GetInventoryItemLink() 等函数返回的完整链接。
 -- @return number or nil: 如果有装备则返回物品ID，否则返回nil
 ---
-local function GetEquippedItemID(slotId)
-    -- 1. 获取物品链接
-    local itemLink = GetInventoryItemLink("player", slotId)
-
-    -- 2. 检查链接是否存在
+local function GetItemIdFromLink(itemLink)
+    -- 检查链接是否存在
     if itemLink then
-        -- 3. 使用 string.match 解析 ID
+        -- 使用 string.find 解析 ID
         -- "item:(%d+)" 会匹配 "item:" 后面的一个或多个数字，并捕获它们
         local _, _, itemIDString = string.find(itemLink, "item:(%d+)")
 
@@ -22032,6 +22077,33 @@ local function GetEquippedItemID(slotId)
     return nil
 end
 
+local function DoSomethingWithItemInfo(index, itemID)
+    local itemName, _, itemQuality = GetItemInfo(itemID)
+    if itemName then
+        -- 获取装备等级并格式化名称
+        local displayName = itemName
+        if itemID and Item_Level[itemID] then
+            local itemLevel = Item_Level[itemID]
+            displayName = "[" .. itemLevel .. "] " .. itemName
+        end
+
+        -- 设置物品名称（包含等级）
+        itemsList[index]:SetText(displayName)
+
+        -- 如果无法获取质量，使用默认颜色
+        if not itemQuality then
+            itemQuality = 0
+        end
+
+        -- 获取并应用物品质量颜色
+        local color = GetItemQualityColor(itemQuality)
+        itemsList[index]:SetTextColor(color.r, color.g, color.b)
+
+        -- 显示物品
+        itemsList[index]:Show()
+    end
+end
+
 -- 显示装备列表的函数
 local function UpdateEquipmentList()
     -- 隐藏所有已显示的物品
@@ -22040,75 +22112,38 @@ local function UpdateEquipmentList()
     end
 
     local slotIndex = 1
-    local hasItems = false
+    local totalItemLevel = 0 -- 装备等级总和
+    local equipCount = 0     -- 装备数量
 
-    -- 遍历所有19个装备槽位，但排除战袍(18)和衬衣(19)
-    for i = 1, 17 do -- 只遍历1-17槽位，排除18和19
+    for i = 1, 19 do
         local link = GetInventoryItemLink("player", i)
 
         if link then
-            hasItems = true
+            local itemID = GetItemIdFromLink(link)
 
-            -- 1.12兼容的物品名称提取方式
-            local itemName = nil
-            local startPos = strfind(link, "%[")
-            local endPos = strfind(link, "%]")
-
-            if startPos and endPos and endPos > startPos then
-                itemName = strsub(link, startPos + 1, endPos - 1)
+            if (i== 4 or i == 19) then
+                -- 跳过
+            else
+                totalItemLevel = totalItemLevel + (Item_Level[itemID] or 0)
+                equipCount = equipCount + 1
             end
 
-            if itemName then
-                -- 从装备链接中提取物品ID
-                local itemID = GetEquippedItemID(i)
+            ItemInfoManager:RequestInfo(itemID, function(itemID)
+                DoSomethingWithItemInfo(i, itemID)
+            end)
 
-                -- 获取装备等级并格式化名称
-                local displayName = itemName
-                if itemID and Item_Level[itemID] then
-                    displayName = "[" .. Item_Level[itemID] .. "] " .. itemName
-                end
-
-                -- 设置物品名称（包含等级）
-                itemsList[slotIndex]:SetText(displayName)
-
-                -- 尝试获取物品质量
-                local _, _, itemQuality = GetItemInfo(link)
-
-                -- 如果无法获取质量，使用默认颜色
-                if not itemQuality then
-                    itemQuality = 0
-                end
-
-                -- 获取并应用物品质量颜色
-                local color = GetItemQualityColor(itemQuality)
-                itemsList[slotIndex]:SetTextColor(color.r, color.g, color.b)
-
-                -- 显示物品
-                itemsList[slotIndex]:Show()
-
-                -- 递增索引
-                slotIndex = slotIndex + 1
-
-                -- 防止超出显示范围
-                if slotIndex > 17 then -- 修改为17，因为排除了2个槽位
-                    break
-                end
-            end
+            -- 递增索引
+            slotIndex = slotIndex + 1
         end
     end
 
-    -- 如果没有找到任何有效装备，显示提示
-    if not hasItems then
-        itemsList[1]:SetText("没有装备物品")
-        itemsList[1]:SetTextColor(1.0, 1.0, 1.0)
-        itemsList[1]:Show()
-        slotIndex = 2
+    -- 更新标题，显示装备等级汇总
+    local titleText = "已装备物品"
+    if equipCount > 0 then
+        local avgItemLevel = math.floor(totalItemLevel / equipCount) -- 四舍五入
+        titleText = titleText .. " (总等级: " .. totalItemLevel .. ", 平均: " .. avgItemLevel .. ")"
     end
-
-    -- 添加调试信息（可选）
-    if hasItems then
-        print("AnotherEquipList: 找到装备 " .. (slotIndex - 1) .. " 件")
-    end
+    title:SetText(titleText)
 end
 
 -- 事件处理 - 修改为1.12兼容的事件处理
@@ -22158,9 +22193,11 @@ local function CharacterFrameOnShow()
         originalCharacterFrameOnShow()
     end
 
-    -- 然后执行我们的操作
-    EquipmentListFrame:Show()
+    -- 更新装备列表
     UpdateEquipmentList()
+
+    -- 显示装备列表
+    EquipmentListFrame:Show()
 end
 
 -- 重写OnHide处理
@@ -22170,7 +22207,7 @@ local function CharacterFrameOnHide()
         originalCharacterFrameOnHide()
     end
 
-    -- 然后执行我们的操作
+    -- 隐藏装备列表
     EquipmentListFrame:Hide()
 end
 
