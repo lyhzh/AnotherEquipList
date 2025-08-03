@@ -22007,6 +22007,31 @@ local function GetItemQualityColor(quality)
     return colors[quality] or colors[0]
 end
 
+---
+-- 获取指定装备栏位的物品ID
+-- @param slotId (number): 装备栏位的数字ID (1-19)
+-- @return number or nil: 如果有装备则返回物品ID，否则返回nil
+---
+local function GetEquippedItemID(slotId)
+    -- 1. 获取物品链接
+    local itemLink = GetInventoryItemLink("player", slotId)
+
+    -- 2. 检查链接是否存在
+    if itemLink then
+        -- 3. 使用 string.match 解析 ID
+        -- "item:(%d+)" 会匹配 "item:" 后面的一个或多个数字，并捕获它们
+        local _, _, itemIDString = string.find(itemLink, "item:(%d+)")
+
+        if itemIDString then
+            -- 将捕获到的字符串ID转换为数字并返回
+            return tonumber(itemIDString)
+        end
+    end
+
+    -- 如果栏位为空或解析失败，返回 nil
+    return nil
+end
+
 -- 显示装备列表的函数
 local function UpdateEquipmentList()
     -- 隐藏所有已显示的物品
@@ -22035,18 +22060,14 @@ local function UpdateEquipmentList()
 
             if itemName then
                 -- 从装备链接中提取物品ID
-                local itemID = nil
-                local idMatch = string.match(link, "item:(%d+)")
-                if idMatch then
-                    itemID = tonumber(idMatch)
-                end
-                
+                local itemID = GetEquippedItemID(i)
+
                 -- 获取装备等级并格式化名称
                 local displayName = itemName
                 if itemID and Item_Level[itemID] then
                     displayName = "[" .. Item_Level[itemID] .. "] " .. itemName
                 end
-                
+
                 -- 设置物品名称（包含等级）
                 itemsList[slotIndex]:SetText(displayName)
 
