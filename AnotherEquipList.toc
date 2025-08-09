@@ -3,4 +3,6 @@
 ## Notes: Displays equipped items next to the character panel. By Kianal.
 ## Author: Kianal
 
+ItemLevels.lua
+ItemInfoManager.lua
 AnotherEquipList.lua

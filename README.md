@@ -1,3 +1,3 @@
-# AnotherEquipList
+# Another Equip List
 
-Another equipment list
+适用于魔兽世界1.12版本的角色装备列表
